@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
-//Part 1: Filtering the pre-fire Landsat 8 collection, creating a mosaic image, and exporting the image
+//Part 1: Filtering the pre-fire Landsat 5 collection, creating a mosaic image, and exporting the image
 //Pre burn - the summer before the fire
 
 var startDate = '1987-06-01'
@@ -45,7 +45,7 @@ Export.image.toDrive({
 var startDate2 = '1989-06-01'
 var endDate2 = '1989-09-01'
 
-// This is the Landsat 8 collection (all the possible available Landsat 8 Collection 2, Tier 1, Level 2 imagery)
+// This is the Landsat 5 collection (all the possible available Landsat 5 Collection 2, Tier 1, Level 2 imagery)
 var Landsat5_collection2 = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2")
   .filterBounds(table3)
   .filterDate(startDate2, endDate2)
@@ -121,12 +121,12 @@ var polygon_area_ha = polygon_area.divide(10000);
 print('Area of polygon:', polygon_area_ha, 'ha');
 
 ///////////////////////////////////////////////////////////////////////
-// Part 4: Mapping an NDVI time series over the Bridger Foothills Fire
+// Part 4: Mapping an NDVI time series over the North Fork Fire
 
 // Import the Landsat 5 TOA image collection.
 var l8 = ee.ImageCollection('LANDSAT/LT05/C02/T2_TOA');
 
-// Map a function over the Landsat 8 TOA collection to add an NDVI band.
+// Map a function over the Landsat 5 TOA collection to add an NDVI band.
 var withNDVI = l8.map(function(image) {
   var ndvi = image.normalizedDifference(['B4', 'B3']).rename('NDVI');
   return image.addBands(ndvi);
