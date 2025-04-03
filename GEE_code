@@ -1,0 +1,153 @@
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+//Part 1: Filtering the pre-fire Landsat 8 collection, creating a mosaic image, and exporting the image
+//Pre burn - the summer before the fire
+
+var startDate = '1987-06-01'
+var endDate = '1987-09-01'
+
+// This is the Landsat 5 collection (all the possible available Landsat 5 Collection 2, Tier 1, Level 2 imagery)
+var Landsat5_collection = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2")
+  .filterBounds(table3)
+  .filterDate(startDate, endDate)
+
+// This tells us what images are inside the collection
+print(Landsat5_collection);
+
+// This turns the whole Landsat collection into one image, finding the middle value for each pixel
+var Landsat_preburn = Landsat5_collection.median().clip(table3);
+print(Landsat_preburn)
+
+var Landsat_bands = ['SR_B4', 'SR_B3', 'SR_B2'];
+// This controls how we want the Landsat image to be displayed
+var Landsat_display = {bands: Landsat_bands, min: 4000, max: 20000};
+
+// This adds the Landsat_mosaic to the map, using the Landsat_display visual parameters, and giving it the name "Landsat Image Pre Burn"
+Map.addLayer(table3, {}, "fire_boundary");
+Map.addLayer(Landsat_preburn, Landsat_display, "Landsat Image Pre Burn");
+// This automatically pans the map to the middle of our area of interest
+Map.centerObject(table3);
+
+// This exports our Landsat image to Google Drive where we can download it
+
+Export.image.toDrive({ 
+  image: Landsat_preburn,
+  description: 'Landsat_Pre-Burn',
+  scale: 30, 
+  maxPixels: 1e13, 
+  region: table3
+});
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+//Part 2: Filtering the post-fire Landsat 5 collection, creating a mosaic image, and exporting the image
+//Post burn - the summer after the fire
+
+var startDate2 = '1989-06-01'
+var endDate2 = '1989-09-01'
+
+// This is the Landsat 8 collection (all the possible available Landsat 8 Collection 2, Tier 1, Level 2 imagery)
+var Landsat5_collection2 = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2")
+  .filterBounds(table3)
+  .filterDate(startDate2, endDate2)
+
+// This tells us what images are inside the collection
+print(Landsat5_collection2);
+
+// This turns the whole Landsat collection into one image, finding the middle value for each pixel
+var Landsat_postburn = Landsat5_collection2.median().clip(table3);
+print(Landsat_postburn)
+
+var Landsat_bands = ['SR_B4', 'SR_B3', 'SR_B2'];
+// This controls how we want the Landsat image to be displayed
+var Landsat_display = {bands: Landsat_bands, min: 4000, max: 20000};
+
+// This adds the Landsat_mosaic to the map, using the Landsat_display visual parameters, and giving it the name "Landsat Image Post Burn"
+Map.addLayer(Landsat_postburn, Landsat_display, "Landsat Image Post Burn");
+// This automatically pans the map to the middle of our area of interest
+Map.centerObject(table3);
+
+// // This exports our Landsat image to Google Drive where we can download it
+Export.image.toDrive({ 
+  image: Landsat_postburn,
+  description: 'Landsat_Post-Burn',
+  scale: 30, 
+  maxPixels: 1e13, 
+  
+  region: table3
+});
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+//Part 3: Calculating NDVI change, thresholding, masking, and calculating area of NDVI decrease
+// NDVI change detection
+
+var ndvi_preburn = Landsat_preburn.normalizedDifference(['SR_B4', 'SR_B3']).rename('NDVI_preburn');
+var ndvi_postburn = Landsat_postburn.normalizedDifference(['SR_B4', 'SR_B3']).rename('NDVI_postburn');
+
+var ndvi_diff = ndvi_postburn.subtract(ndvi_preburn).rename('NDVI_diff');
+
+var ndviParams = {min: -1, max: 1, palette: ['blue', 'white', 'green']};
+
+Map.centerObject(table3);
+Map.addLayer(ndvi_preburn, ndviParams, 'NDVI_preburn');
+Map.addLayer(ndvi_postburn, ndviParams, 'NDVI_postburn');
+Map.addLayer(ndvi_diff, {min: -0.5, max: 0.5, palette: ['red', 'white', 'green']}, 'NDVI_diff');
+
+// Define a threshold for NDVI decrease
+var ndvi_decrease_threshold = -0.1;
+
+// Compute a binary mask where values < ndvi_decrease_threshold are set to 1, otherwise 0
+var ndvi_decrease_mask = ndvi_diff.lt(ndvi_decrease_threshold).rename('NDVI_decrease_mask');
+
+Map.addLayer(ndvi_decrease_mask, null, 'NDVI decrease mask');
+
+// Compute the area of NDVI decrease by multiplying the number of pixels in the mask by the area of each pixel (in square meters)
+var ndvi_decrease_area = ndvi_decrease_mask.multiply(ee.Image.pixelArea()).reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: table3,
+  scale: 30,
+  maxPixels: 1e15
+}).getNumber('NDVI_decrease_mask');
+
+// Convert the area to hectares
+var ndvi_decrease_area_ha = ndvi_decrease_area.divide(10000);
+
+// Print the area
+print('Area of NDVI decrease:', ndvi_decrease_area_ha, 'ha');
+
+// Compute the area of the polygon in square meters
+var polygon_area = table3.geometry().area();
+var polygon_area_ha = polygon_area.divide(10000);
+print('Area of polygon:', polygon_area_ha, 'ha');
+
+///////////////////////////////////////////////////////////////////////
+// Part 4: Mapping an NDVI time series over the Bridger Foothills Fire
+
+// Import the Landsat 5 TOA image collection.
+var l8 = ee.ImageCollection('LANDSAT/LT05/C02/T2_TOA');
+
+// Map a function over the Landsat 8 TOA collection to add an NDVI band.
+var withNDVI = l8.map(function(image) {
+  var ndvi = image.normalizedDifference(['B4', 'B3']).rename('NDVI');
+  return image.addBands(ndvi);
+});
+
+// Create a chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: withNDVI.select('NDVI'),
+  regions: table3,
+  reducer: ee.Reducer.mean(),
+  scale: 30
+}).setOptions({title: 'NDVI over time'});
+
+// Display the chart in the console.
+print(chart);
+
+// Export NDVI map
+Export.image.toDrive({ 
+  image: ndvi_diff,
+  description: 'NDVI difference',
+  scale: 30, 
+  maxPixels: 1e13, 
+  region: table3
+});
